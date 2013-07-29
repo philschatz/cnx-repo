@@ -77,9 +77,15 @@ module.exports = exports = (argv) ->
     if not id
       id = _uuid()
       setUserId(id, resp)
-    # Save the userId on the request so route handlers can use it
-    req.userId = id
-    next()
+
+    # Query or create the User object and squirrel it on the requect
+    # So other queries can use it.
+    # FIXME: Cache this so we do not have to look up the User on every request
+    models.User.findOrCreate({id:id})
+    .success (user) ->
+      # Save the userId on the request so route handlers can use it
+      req.userModel = user
+      next()
 
 
   app.get '/me', authenticated, authenticated, (req, resp) ->
@@ -109,11 +115,9 @@ module.exports = exports = (argv) ->
         resp.send()
 
   app.get '/workspace', authenticated, (req, resp) ->
-    # TODO: Look up the user
-
     chainer = new Sequelize.Utils.QueryChainer()
-    chainer.add(models.Content.findAll())
-    chainer.add(models.Folder.findAll())
+    chainer.add(req.userModel.getContents())
+    chainer.add(req.userModel.getFolders())
     promise = chainer.run()
     resolvePromiseError(promise, resp)
     .success (results) ->
@@ -131,7 +135,13 @@ module.exports = exports = (argv) ->
     content = models.Content.build(attrs)
 
     promise = content.save()
-    resolvePromise(promise, resp)
+    resolvePromiseError(promise, resp)
+    .success (content) ->
+      # Give the current user permissions to edit the folder
+      promise = req.userModel.addContent(content)
+      resolvePromiseError(promise, resp)
+      .success () ->
+        resp.send(content.toJSON())
 
   app.get ///^/content/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/?$///, authenticated, (req, resp) ->
     id = req.params[0]
@@ -173,7 +183,12 @@ module.exports = exports = (argv) ->
       promise = folder.setContents(contents)
       resolvePromiseError(promise, resp)
       .success () ->
-        folderHelper(folder, resp)
+        # Give the current user permissions to edit the folder
+        promise = req.userModel.addFolder(folder)
+        resolvePromiseError(promise, resp)
+        .success () ->
+          # Finally, return the folder
+          folderHelper(folder, resp)
 
   app.get ///^/folder/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/?$///, authenticated, (req, resp) ->
     id = req.params[0]
