@@ -1,0 +1,44 @@
+{
+  "name": "cnx-repo",
+  "version": "0.0.1a",
+  "main": "index.js",
+  "dependencies": {
+    "sequelize": "*",
+    "pg": "*",
+    "lodash": "*",
+    "coffee-script": "*",
+    "express": "*",
+    "mkdirp": "*",
+    "optimist": "*",
+    "passport": "*",
+    "passport-openid": "*",
+    "hbs": "*",
+    "bouncy": "*",
+    "ws": "*",
+    "event-stream": "*",
+    "JSONStream": "*",
+    "async": "*",
+    "config-chain": "*",
+    "glob": "*",
+    "flates": "0.0.5"
+  },
+  "scripts": {
+    "test": "./node_modules/mocha/bin/mocha",
+    "start": "node ./bin/server.js"
+  },
+  "devDependencies": {
+    "docco": "~0.3",
+    "mocha": "*",
+    "should": "*"
+  },
+  "optionalDependencies": {
+    "levelup": "*"
+  },
+  "engines": {
+    "node": "~0.8"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/philschatz/cnx-repo"
+  }
+}
