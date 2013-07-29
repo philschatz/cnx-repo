@@ -20,7 +20,7 @@ defargs = require './defaultargs'
 
 
 # Generate UUIDv4 id's (from http://stackoverflow.com/questions/105034/how-to-create-a-guid-uuid-in-javascript)
-uuid = b = (a) ->
+_uuid = b = (a) ->
   (if a then (a ^ Math.random() * 16 >> a / 4).toString(16) else ([1e7] + -1e3 + -4e3 + -8e3 + -1e11).replace(/[018]/g, b))
 
 # Set export objects for node and coffee to a function that generates a sfw server.
@@ -66,63 +66,124 @@ module.exports = exports = (argv) ->
   app.get '/me', (req, resp) ->
     resp.send({})
 
-  app.get '/workspace', (req, resp) ->
-    # TODO: Look up the user
-    resp.send([])
-
   app.post '/logging', (req, resp) ->
     log req.body
     resp.send()
 
-  VALID_ATTRS = [
-    'mediaType'
-    'title'
-    'body'
-  ]
-
-  resolvePromise = (promise, resp) ->
+  resolvePromiseError = (promise, resp) ->
     promise.error (err) ->
       log err
       resp.status(400)
+      resp.send(err)
+    return promise
 
-    promise.success (content) ->
+  resolvePromise = (promise, resp) ->
+    resolvePromiseError(promise, resp)
+    .success (content) ->
       # If content is an array then there was a QueryChainer and we just need the last item
-      content = _.last(content) if _.isArray(content)
+      content = _.map(content, (o) => o.toJSON()) if _.isArray(content)
 
       if content
         resp.send(content.toJSON())
       else
         resp.status(404)
+        resp.send()
+
+  app.get '/workspace', (req, resp) ->
+    # TODO: Look up the user
+
+    chainer = new Sequelize.Utils.QueryChainer()
+    chainer.add(models.Content.findAll())
+    chainer.add(models.Folder.findAll())
+    promise = chainer.run()
+    resolvePromiseError(promise, resp)
+    .success (results) ->
+      results = _.flatten results
+      all = _.map results, (o) -> o.toJSON()
+      resp.send(all)
+
+
+  # Content routes
+  # ===============
 
   app.post ///^/content/?$///, (req, resp) ->
-    id = uuid() # Create a new uuid for the model
     attrs = req.body
-    attrs = _.pick attrs, VALID_ATTRS
-    attrs.id = id
+    attrs.id = _uuid() # Create a new uuid for the model
     content = models.Content.build(attrs)
 
     promise = content.save()
     resolvePromise(promise, resp)
 
-  app.get ///^/content/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})/?$///, (req, resp) ->
+  app.get ///^/content/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/?$///, (req, resp) ->
     id = req.params[0]
     promise = models.Content.find({where: {id:id}})
     resolvePromise(promise, resp)
 
-  app.put ///^/content/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$/?///, (req, resp) ->
+  app.put ///^/content/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/?///, (req, resp) ->
     id = req.params[0]
     attrs = req.body
-    attrs = _.pick attrs, VALID_ATTRS
 
     # Look up the model before updating so we can return it after the update
-    models.Content.find({where: {id:id}})
-    .error( (err) =>
-      log err
-      resp.status(404)
-    )
+    promise = models.Content.find({where: {id:id}})
+    resolvePromiseError(promise, resp)
     .success (content) =>
       promise = content.updateAttributes(attrs)
       resolvePromise(promise, resp)
+
+  # Folder routes
+  # ===============
+
+  folderHelper = (folder, resp) ->
+    promise = folder.getContents()
+    resolvePromiseError(promise, resp)
+    .success (contents) ->
+      json = folder.toJSON()
+      json.contents = _.map contents, (o) -> o.toJSON()
+      resp.send(json)
+
+
+  app.post ///^/folder/?$///, (req, resp) ->
+    attrs = req.body
+    attrs.id = _uuid() # Create a new uuid for the model
+    folder = models.Folder.build(attrs)
+
+    # Add all the contents by looking them up first
+    contentsPromise = models.Content.findAll({where: {id: attrs.contents}})
+    resolvePromiseError(contentsPromise, resp)
+    .success (contents) ->
+      promise = folder.setContents(contents)
+      resolvePromiseError(promise, resp)
+      .success () ->
+        folderHelper(folder, resp)
+
+  app.get ///^/folder/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/?$///, (req, resp) ->
+    id = req.params[0]
+    promise = models.Folder.find({where: {id:id}})
+    resolvePromiseError(promise, resp)
+    .success (folder) =>
+      folderHelper(folder, resp)
+
+
+  app.put ///^/folder/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/?///, (req, resp) ->
+    id = req.params[0]
+    attrs = req.body
+
+    # Look up the model before updating so we can return it after the update
+    promise = models.Folder.find({where: {id:id}})
+    resolvePromiseError(promise, resp)
+    .success (folder) =>
+      promise = folder.updateAttributes(attrs)
+      resolvePromiseError(promise, resp)
+      .success () =>
+        # Update the contents by looking them up first
+        contentsPromise = models.Content.findAll({where: {id: attrs.contents}})
+        resolvePromiseError(contentsPromise, resp)
+        .success (contents) ->
+          promise = folder.setContents(contents)
+          resolvePromiseError(promise, resp)
+          .success () ->
+            folderHelper(folder, resp)
+
 
 
   server = app.listen argv.p, argv.o, ->
