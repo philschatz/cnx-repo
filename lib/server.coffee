@@ -3,10 +3,16 @@
 # can be installed with an:
 #     npm install
 
+USER_HOST = 'user.beta.cnx.org'
+USER_PORT = 6543
+USER_URL = "http://#{USER_HOST}:#{USER_PORT}"
+
+
 # Standard lib
 fs = require 'fs'
 path = require 'path'
 http = require 'http'
+https = require 'https'
 child_process = require 'child_process'
 spawn = child_process.spawn
 
@@ -184,6 +190,63 @@ module.exports = exports = (argv) ->
           .success () ->
             folderHelper(folder, resp)
 
+
+  # Login and Authentication
+  # -------------------------
+
+
+  remoteVerify = (payload, cb) ->
+    options = {
+      hostname: USER_HOST
+      port: USER_PORT
+      method: 'POST'
+      path: '/server/check'
+    }
+    # TODO: This needs more robust error handling, just trying to
+    # keep it from taking down the server.
+    req = http.request options, (resp) ->
+      responsedata = ''
+      resp.on 'data', (chunk) ->
+        responsedata += chunk
+
+      resp.on 'error', (e) ->
+        cb(e, 'Page not found', 404)
+
+      resp.on 'end', ->
+        if resp.statusCode == 404
+          cb(null, 'Page not found', 404)
+        else if responsedata
+          cb(null, JSON.parse(responsedata), resp.statusCode)
+        else
+          cb(null, 'Page not found', 404)
+
+    req.on 'error', (e) ->
+      cb(e, 'Page not found', 404)
+
+    req.write(JSON.stringify(payload))
+
+
+  app.all '/login', (req, resp) ->
+    cameFrom = req.get('Referrer') or '/'
+    userUrl = "#{USER_URL}/server/login?came_from=#{cameFrom}"
+    resp.redirect(userUrl)
+
+  app.get '/valid', (req, resp) ->
+    userToken = req.query['token']
+    nextLocation = req.query['next'] or '/'
+
+    # Check with the service to verify authentication is valid.
+    remoteVerify {token:userToken}, (err, value) ->
+      # if err
+      #   resp.status(400)
+      #   return resp.send(err)
+
+      # userId = JSON.parse(value).id
+
+      # Now that we have the user's authenticated id, we can associate the user
+      #   with the system and any previous session.
+      console.log 'FIXME: This times out and I just assume an id'
+      userId = '00000000-0000-0000-0000-000000000000'
 
 
   server = app.listen argv.p, argv.o, ->
