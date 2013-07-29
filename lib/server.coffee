@@ -3,7 +3,7 @@
 # can be installed with an:
 #     npm install
 
-USER_HOST = 'user.beta.cnx.org'
+USER_HOST = 'localhost'
 USER_PORT = 6543
 USER_URL = "http://#{USER_HOST}:#{USER_PORT}"
 
@@ -58,7 +58,7 @@ module.exports = exports = (argv) ->
   # including hbs to use handlebars/mustache templates
   # saved with a .html extension, and no layout.
   app.configure ->
-    app.use(express.cookieParser())
+    app.use(express.cookieParser('secret'))
     app.use(express.bodyParser())
     app.use(express.methodOverride())
     app.use(express.session({ secret: 'notsecret'}))
@@ -68,11 +68,24 @@ module.exports = exports = (argv) ->
   # Show all of the options a server is using.
   log argv
 
+  getUserId = (req)      -> req.signedCookies?.userid?.id
+  setUserId = (id, resp) -> resp.cookie('userid', {id:id}, { signed: true })
 
-  app.get '/me', (req, resp) ->
+  # Middleware that loads the UserID from a cookie or assigns one if it does not exist
+  authenticated = (req, resp, next) ->
+    id = getUserId(req)
+    if not id
+      id = _uuid()
+      setUserId(id, resp)
+    # Save the userId on the request so route handlers can use it
+    req.userId = id
+    next()
+
+
+  app.get '/me', authenticated, authenticated, (req, resp) ->
     resp.send({})
 
-  app.post '/logging', (req, resp) ->
+  app.post '/logging', authenticated, (req, resp) ->
     log req.body
     resp.send()
 
@@ -95,7 +108,7 @@ module.exports = exports = (argv) ->
         resp.status(404)
         resp.send()
 
-  app.get '/workspace', (req, resp) ->
+  app.get '/workspace', authenticated, (req, resp) ->
     # TODO: Look up the user
 
     chainer = new Sequelize.Utils.QueryChainer()
@@ -112,7 +125,7 @@ module.exports = exports = (argv) ->
   # Content routes
   # ===============
 
-  app.post ///^/content/?$///, (req, resp) ->
+  app.post ///^/content/?$///, authenticated, (req, resp) ->
     attrs = req.body
     attrs.id = _uuid() # Create a new uuid for the model
     content = models.Content.build(attrs)
@@ -120,12 +133,12 @@ module.exports = exports = (argv) ->
     promise = content.save()
     resolvePromise(promise, resp)
 
-  app.get ///^/content/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/?$///, (req, resp) ->
+  app.get ///^/content/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/?$///, authenticated, (req, resp) ->
     id = req.params[0]
     promise = models.Content.find({where: {id:id}})
     resolvePromise(promise, resp)
 
-  app.put ///^/content/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/?///, (req, resp) ->
+  app.put ///^/content/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/?///, authenticated, (req, resp) ->
     id = req.params[0]
     attrs = req.body
 
@@ -148,7 +161,7 @@ module.exports = exports = (argv) ->
       resp.send(json)
 
 
-  app.post ///^/folder/?$///, (req, resp) ->
+  app.post ///^/folder/?$///, authenticated, (req, resp) ->
     attrs = req.body
     attrs.id = _uuid() # Create a new uuid for the model
     folder = models.Folder.build(attrs)
@@ -162,7 +175,7 @@ module.exports = exports = (argv) ->
       .success () ->
         folderHelper(folder, resp)
 
-  app.get ///^/folder/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/?$///, (req, resp) ->
+  app.get ///^/folder/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/?$///, authenticated, (req, resp) ->
     id = req.params[0]
     promise = models.Folder.find({where: {id:id}})
     resolvePromiseError(promise, resp)
@@ -170,7 +183,7 @@ module.exports = exports = (argv) ->
       folderHelper(folder, resp)
 
 
-  app.put ///^/folder/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/?///, (req, resp) ->
+  app.put ///^/folder/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/?///, authenticated, (req, resp) ->
     id = req.params[0]
     attrs = req.body
 
@@ -226,12 +239,12 @@ module.exports = exports = (argv) ->
     req.write(JSON.stringify(payload))
 
 
-  app.all '/login', (req, resp) ->
+  app.all '/login', authenticated, (req, resp) ->
     cameFrom = req.get('Referrer') or '/'
     userUrl = "#{USER_URL}/server/login?came_from=#{cameFrom}"
     resp.redirect(userUrl)
 
-  app.get '/valid', (req, resp) ->
+  app.get '/valid', authenticated, (req, resp) ->
     userToken = req.query['token']
     nextLocation = req.query['next'] or '/'
 
@@ -245,7 +258,7 @@ module.exports = exports = (argv) ->
 
       # Now that we have the user's authenticated id, we can associate the user
       #   with the system and any previous session.
-      console.log 'FIXME: This times out and I just assume an id'
+      console.log 'FIXME: Do not just use an arbitrary id'
       userId = '00000000-0000-0000-0000-000000000000'
 
 
