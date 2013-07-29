@@ -1,3 +1,17 @@
+# Sorry, this file is not commented but I'll get around to cleaning up one of these evenings.
+#
+# Features:
+#
+# - fwds GETs to static files to the ./atc (installed via npm)
+# - Autogenerates a userid (if one doesn't exist) using the `authentication` function
+# - GET /workspace returns a list of content and folders the current userid has access to
+# - GET/POST/PUT to /content work just like atc expects
+# - GET/POST/PUT to /folder  work just like atc expects
+# - Folder.contents array is assembled so it contains the {id, title, mediaType} for each piece of content
+# - /login redirects to a cnx-user instance
+# - /validate changes the current userId
+
+
 #### Dependencies ####
 # anything not in the standard library is included in the repo, or
 # can be installed with an:
