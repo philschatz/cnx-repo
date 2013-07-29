@@ -146,19 +146,24 @@ module.exports = exports = (argv) ->
   app.post ///^/content/?$///, authenticated, (req, resp) ->
     attrs = req.body
     attrs.id = _uuid() # Create a new uuid for the model
+
+    # 1. Create a new piece of content
     content = models.Content.build(attrs)
 
+    # 2. Perform the Insert
     promise = content.save()
     resolvePromiseError(promise, resp)
     .success (content) ->
-      # Give the current user permissions to edit the folder
+      # 3. Give the current user permissions to edit the content
       promise = req.userModel.addContent(content)
       resolvePromiseError(promise, resp)
       .success () ->
+        # 4. Return the content JSON
         resp.send(content.toJSON())
 
   app.get ///^/content/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/?$///, authenticated, (req, resp) ->
     id = req.params[0]
+    # 1. Lookup and return the content by id
     promise = models.Content.find({where: {id:id}})
     resolvePromise(promise, resp)
 
@@ -166,16 +171,19 @@ module.exports = exports = (argv) ->
     id = req.params[0]
     attrs = req.body
 
-    # Look up the model before updating so we can return it after the update
+    # 1. Lookup the content
     promise = models.Content.find({where: {id:id}})
     resolvePromiseError(promise, resp)
     .success (content) =>
+      # 2. Update the attributes on the content
       promise = content.updateAttributes(attrs)
+      # 3. return the content JSON
       resolvePromise(promise, resp)
 
   # Folder routes
   # ===============
 
+  # When the JSON of a folder is being sent, populate the `.contents` by making a second query
   folderHelper = (folder, resp) ->
     promise = folder.getContents()
     resolvePromiseError(promise, resp)
@@ -188,27 +196,32 @@ module.exports = exports = (argv) ->
   app.post ///^/folder/?$///, authenticated, (req, resp) ->
     attrs = req.body
     attrs.id = _uuid() # Create a new uuid for the model
+
+    # 1. Assign all the attributes to the new folder
     folder = models.Folder.build(attrs)
 
-    # Add all the contents by looking them up first
+    # 2. Look up all the content that will be in the folder (FIXME: we just need the id's though)
     contentsPromise = models.Content.findAll({where: {id: attrs.contents}})
     resolvePromiseError(contentsPromise, resp)
     .success (contents) ->
+      # 3. Assign all the content in the folder
       promise = folder.setContents(contents)
       resolvePromiseError(promise, resp)
       .success () ->
-        # Give the current user permissions to edit the folder
+        # 4. Give the current user permissions to edit the folder
         promise = req.userModel.addFolder(folder)
         resolvePromiseError(promise, resp)
         .success () ->
-          # Finally, return the folder
+          # 5. Finally, return the folder
           folderHelper(folder, resp)
 
   app.get ///^/folder/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/?$///, authenticated, (req, resp) ->
     id = req.params[0]
+    # 1. Retreive the folder
     promise = models.Folder.find({where: {id:id}})
     resolvePromiseError(promise, resp)
     .success (folder) =>
+      # 2. Return JSON but Retreive the folder contents so we send `.contents: [{id, mediaType, title}]`
       folderHelper(folder, resp)
 
 
@@ -216,20 +229,23 @@ module.exports = exports = (argv) ->
     id = req.params[0]
     attrs = req.body
 
-    # Look up the model before updating so we can return it after the update
+    # 1. Retreive the folder
     promise = models.Folder.find({where: {id:id}})
     resolvePromiseError(promise, resp)
     .success (folder) =>
+      # 2. Update the folder attributes
       promise = folder.updateAttributes(attrs)
       resolvePromiseError(promise, resp)
       .success () =>
-        # Update the contents by looking them up first
+        # 3. Look up the contents of the folder
         contentsPromise = models.Content.findAll({where: {id: attrs.contents}})
         resolvePromiseError(contentsPromise, resp)
         .success (contents) ->
+          # 4. Assign the new contents of the folder
           promise = folder.setContents(contents)
           resolvePromiseError(promise, resp)
           .success () ->
+            # 5. Return JSON but Retreive the folder contents so we send `.contents: [{id, mediaType, title}]`
             folderHelper(folder, resp)
 
 
